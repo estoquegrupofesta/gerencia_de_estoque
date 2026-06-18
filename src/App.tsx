@@ -1,17 +1,6 @@
 import { useState } from 'react';
 import {  
   Package, 
-  PlusCircle, 
-  Truck, 
-  Users, 
-  UserPlus, 
-  ArrowUpRight, 
-  ArrowDownLeft,
-  BarChart3,
-  LineChart,
-  Banknote,
-  ClipboardIcon,
-  Contact,
   Menu, // Ícone para abrir
   X     // Ícone para fechar
 } from 'lucide-react';
