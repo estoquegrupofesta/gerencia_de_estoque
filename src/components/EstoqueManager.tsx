@@ -15,18 +15,19 @@ import {
   MessageSquare,
   ChevronLeft,
   ChevronRight,
-  Filter
+  Filter,
+  Layers
 } from 'lucide-react';
 
+// Nova Interface baseada exatamente nas imagens da tabela do Supabase
 interface Produto {
   id: string;
-  cod: string;
-  codigo_de_barras: string;
+  cod: number | string;
+  codigo_de_barras: number | string;
   nome: string;
-  categoria: string;
+  enderecamento: string; // Nova coluna principal
   estoque_atual: number;
-  estoque_mat_prima: number;
-  prateleira_separacao: string;
+  estoque_mat_prima: string; // Alterado para text conforme imagem
   comentarios: string;
 }
 
@@ -36,10 +37,9 @@ export function EstoqueManager() {
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
   
-  // Estados de Filtros e Abas
+  // Estado de Filtros focado em Endereçamento
   const [abaPrincipal, setAbaPrincipal] = useState<'todos' | 'critico'>('todos');
-  const [filtroCategoria, setFiltroCategoria] = useState<string>('todos');
-  const [filtroPrateleira, setFiltroPrateleira] = useState<string>('todos');
+  const [filtroEnderecamento, setFiltroEnderecamento] = useState<string>('todos');
   
   const [paginaAtual, setPaginaAtual] = useState(1);
   const ITENS_POR_PAGINA = 21;
@@ -50,14 +50,13 @@ export function EstoqueManager() {
   const [itemSelecionado, setItemSelecionado] = useState<Produto | null>(null);
   const [itemParaEdicao, setItemParaEdicao] = useState<Produto | null>(null);
   
-  // Estados do Formulário de Edição
+  // Estados do Formulário de Edição ajustados
   const [editNome, setEditNome] = useState('');
-  const [editCod, setEditCod] = useState('');
-  const [editBarcode, setEditBarcode] = useState('');
-  const [editCategoria, setEditCategoria] = useState('');
+  const [editCod, setEditCod] = useState<string | number>('');
+  const [editBarcode, setEditBarcode] = useState<string | number>('');
+  const [editEnderecamento, setEditEnderecamento] = useState('');
   const [editEstoqueAtual, setEditEstoqueAtual] = useState<number>(0);
-  const [editEstoqueMatPrima, setEditEstoqueMatPrima] = useState<number>(0);
-  const [editPrateleira, setEditPrateleira] = useState('');
+  const [editEstoqueMatPrima, setEditEstoqueMatPrima] = useState(''); // Text
   const [editComentarios, setEditComentarios] = useState('');
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
 
@@ -75,7 +74,7 @@ export function EstoqueManager() {
 
       if (error) throw error;
       
-      // ORDENAÇÃO: Itens com estoque primeiro (A-Z), depois itens zerados (A-Z)
+      // ORDENAÇÃO: Itens com estoque primeiro, depois zerados/negativos (Ordenados por Nome de A-Z)
       const listaOrdenada = (data || []).sort((a, b) => {
         const aTemEstoque = (a.estoque_atual ?? 0) > 0;
         const bTemEstoque = (b.estoque_atual ?? 0) > 0;
@@ -83,7 +82,7 @@ export function EstoqueManager() {
         if (aTemEstoque && !bTemEstoque) return -1;
         if (!aTemEstoque && bTemEstoque) return 1;
         
-        return a.nome.localeCompare(b.nome);
+        return (a.nome || '').localeCompare(b.nome || '');
       });
 
       setProdutos(listaOrdenada);
@@ -95,27 +94,21 @@ export function EstoqueManager() {
     }
   }
 
-  // Gera listas únicas de Categorias e Prateleiras vindas do banco para alimentar os selects de filtro
-  const categoriasDisponiveis = useMemo(() => {
-    const lista = produtos.map(p => p.categoria).filter(Boolean);
-    return Array.from(new Set(lista)).sort();
-  }, [produtos]);
-
-  const prateleirasDisponiveis = useMemo(() => {
-    const lista = produtos.map(p => p.prateleira_separacao).filter(Boolean);
+  // Gera lista única de endereçamentos dinâmicos vindos do banco
+  const enderecamentosDisponiveis = useMemo(() => {
+    const lista = produtos.map(p => p.enderecamento).filter(Boolean);
     return Array.from(new Set(lista)).sort();
   }, [produtos]);
 
   const iniciarEdicao = (e: React.MouseEvent, item: Produto) => {
     e.stopPropagation();
     setItemParaEdicao(item);
-    setEditNome(item.nome);
-    setEditCod(item.cod);
-    setEditBarcode(item.codigo_de_barras || '');
-    setEditCategoria(item.categoria || '');
+    setEditNome(item.nome || '');
+    setEditCod(item.cod ?? '');
+    setEditBarcode(item.codigo_de_barras ?? '');
+    setEditEnderecamento(item.enderecamento || '');
     setEditEstoqueAtual(item.estoque_atual ?? 0);
-    setEditEstoqueMatPrima(item.estoque_mat_prima ?? 0);
-    setEditPrateleira(item.prateleira_separacao || '');
+    setEditEstoqueMatPrima(item.estoque_mat_prima || '');
     setEditComentarios(item.comentarios || '');
   };
 
@@ -127,12 +120,11 @@ export function EstoqueManager() {
     try {
       const updateData = {
         nome: editNome,
-        cod: editCod,
-        codigo_de_barras: editBarcode || null,
-        categoria: editCategoria,
+        cod: editCod === '' ? null : Number(editCod), // Convertendo para int8 do banco
+        codigo_de_barras: editBarcode === '' ? null : Number(editBarcode), // Convertendo para int8 do banco
+        enderecamento: editEnderecamento || null,
         estoque_atual: editEstoqueAtual,
-        estoque_mat_prima: editEstoqueMatPrima,
-        prateleira_separacao: editPrateleira || null,
+        estoque_mat_prima: editEstoqueMatPrima || null, // Mantido como text
         comentarios: editComentarios || null
       };
 
@@ -154,7 +146,7 @@ export function EstoqueManager() {
     }
   }
 
-  // FILTRAGEM MULTI-NÍVEL GLOBAL: Abas -> Seletores Combinados -> Busca Fuzzy
+  // FILTRAGEM MULTI-NÍVEL GLOBAL COM NOVAS COLUNAS
   const dadosFiltradosEBuscados = useMemo(() => {
     let base = produtos;
 
@@ -163,29 +155,23 @@ export function EstoqueManager() {
       base = base.filter(p => (p.estoque_atual ?? 0) <= 5);
     }
 
-    // 2. Filtro Combinado de Categoria
-    if (filtroCategoria !== 'todos') {
-      base = base.filter(p => p.categoria === filtroCategoria);
+    // 2. Filtro de Endereçamento
+    if (filtroEnderecamento !== 'todos') {
+      base = base.filter(p => p.enderecamento === filtroEnderecamento);
     }
 
-    // 3. Filtro Combinado de Prateleira
-    if (filtroPrateleira !== 'todos') {
-      base = base.filter(p => p.prateleira_separacao === filtroPrateleira);
-    }
-
-    // 4. Executa a busca inteligente sobre toda a base afunilada pelos filtros
+    // 3. Executa a busca inteligente sobre a tabela adaptada
     if (!busca) return base;
     
     const fuseGlobal = new Fuse(base, {
-      keys: ['nome', 'cod', 'codigo_de_barras', 'categoria', 'prateleira_separacao'],
+      keys: ['nome', 'cod', 'codigo_de_barras', 'enderecamento', 'estoque_mat_prima', 'comentarios'],
       threshold: 0.3,
       ignoreLocation: true,
     });
 
     return fuseGlobal.search(busca).map(result => result.item);
-  }, [produtos, abaPrincipal, filtroCategoria, filtroPrateleira, busca]);
+  }, [produtos, abaPrincipal, filtroEnderecamento, busca]);
 
-  // Calcula as páginas baseando-se no resultado final já filtrado
   const totalPaginas = Math.ceil(dadosFiltradosEBuscados.length / ITENS_POR_PAGINA);
   
   const produtosPaginados = useMemo(() => {
@@ -222,7 +208,7 @@ export function EstoqueManager() {
               <Search className="absolute left-3 top-2.5 text-gray-500" size={16} />
               <input 
                 type="text" 
-                placeholder="Buscar em todo o banco de dados..." 
+                placeholder="Buscar por nome, código, EAN ou endereço..." 
                 className="w-full pl-9 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-xl text-white text-xs outline-none focus:border-blue-500 transition-colors" 
                 value={busca} 
                 onChange={(e) => { setBusca(e.target.value); setPaginaAtual(1); }} 
@@ -242,46 +228,31 @@ export function EstoqueManager() {
       {/* SUB-BARRA DE FILTROS SELETORES DINÂMICOS */}
       <div className="bg-gray-50 border-b border-gray-100 px-6 py-3 flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-1.5 text-gray-500 text-xs font-black uppercase tracking-wider">
-          <Filter size={14} className="text-gray-400" /> Filtros Avançados:
+          <Filter size={14} className="text-gray-400" /> Filtro Logístico:
         </div>
 
-        {/* Filtro Categoria */}
+        {/* Seletor de Endereçamento */}
         <div className="flex items-center gap-1.5">
-          <label className="text-[10px] font-black uppercase text-gray-400">Categoria:</label>
+          <label className="text-[10px] font-black uppercase text-gray-400">Filtrar por Endereço:</label>
           <select 
-            value={filtroCategoria} 
-            onChange={(e) => { setFiltroCategoria(e.target.value); setPaginaAtual(1); }}
+            value={filtroEnderecamento} 
+            onChange={(e) => { setFiltroEnderecamento(e.target.value); setPaginaAtual(1); }}
             className="px-3 py-1.5 text-xs font-bold rounded-lg border bg-white border-gray-200 text-gray-700 outline-none focus:border-blue-500 cursor-pointer uppercase shadow-sm"
           >
-            <option value="todos">Todas as Categorias</option>
-            {categoriasDisponiveis.map(cat => (
-              <option key={cat} value={cat}>{cat.toUpperCase()}</option>
+            <option value="todos">Todos os Endereços</option>
+            {enderecamentosDisponiveis.map(end => (
+              <option key={end} value={end}>{end.toUpperCase()}</option>
             ))}
           </select>
         </div>
 
-        {/* Filtro Prateleira */}
-        <div className="flex items-center gap-1.5">
-          <label className="text-[10px] font-black uppercase text-gray-400">Prateleira:</label>
-          <select 
-            value={filtroPrateleira} 
-            onChange={(e) => { setFiltroPrateleira(e.target.value); setPaginaAtual(1); }}
-            className="px-3 py-1.5 text-xs font-bold rounded-lg border bg-white border-gray-200 text-gray-700 outline-none focus:border-blue-500 cursor-pointer uppercase shadow-sm"
-          >
-            <option value="todos">Todas as Prateleiras</option>
-            {prateleirasDisponiveis.map(prat => (
-              <option key={prat} value={prat}>{prat.toUpperCase()}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Reset rápido se houver filtros ativos */}
-        {(filtroCategoria !== 'todos' || filtroPrateleira !== 'todos') && (
+        {/* Reset rápido de filtros */}
+        {filtroEnderecamento !== 'todos' && (
           <button 
-            onClick={() => { setFiltroCategoria('todos'); setFiltroPrateleira('todos'); setPaginaAtual(1); }}
+            onClick={() => { setFiltroEnderecamento('todos'); setPaginaAtual(1); }}
             className="text-[10px] font-black text-red-500 hover:text-red-600 uppercase underline cursor-pointer ml-auto"
           >
-            Limpar Filtros
+            Limpar Filtro
           </button>
         )}
       </div>
@@ -290,7 +261,7 @@ export function EstoqueManager() {
       {erro && <div className="m-6 p-4 bg-red-50 text-red-700 text-xs font-bold rounded-xl flex items-center gap-2 border border-red-100"><AlertCircle size={18} /> {erro}</div>}
       {sucesso && <div className="m-6 p-4 bg-green-50 text-green-700 text-xs font-bold rounded-xl flex items-center gap-2 border border-green-100"><Check size={18} /> {sucesso}</div>}
 
-      {/* RENDERIZAÇÃO EM CARDS PREMIUM */}
+      {/* GRID DE CARDS PREMIUM REORGANIZADO */}
       <div className="p-6">
         {loading ? (
           <div className="flex flex-col items-center py-20">
@@ -309,10 +280,11 @@ export function EstoqueManager() {
                   >
                     <div className="flex justify-between items-start mb-4">
                       <div className="truncate pr-2">
-                        <p className="text-[10px] font-black uppercase text-blue-500 tracking-wider">
-                          {item.categoria || 'Sem Categoria'}
+                        {/* DESTAQUE DO ENDEREÇAMENTO NO TOPO DO CARD */}
+                        <p className="text-[10px] font-black uppercase text-emerald-600 tracking-wider flex items-center gap-1">
+                          <MapPin size={12} className="shrink-0" /> {item.enderecamento || 'Sem Endereço'}
                         </p>
-                        <h3 className="font-black text-gray-800 uppercase text-xs mt-0.5 group-hover:text-blue-600 truncate">
+                        <h3 className="font-black text-gray-800 uppercase text-xs mt-1 group-hover:text-blue-600 truncate">
                           {item.nome}
                         </h3>
                         <div className="flex gap-2 text-[10px] font-mono text-gray-400 mt-1">
@@ -328,39 +300,38 @@ export function EstoqueManager() {
                       </button>
                     </div>
 
-                    {/* SALDOS CONSOLIDADOS */}
+                    {/* SEÇÃO DE SALDOS ADAPTADA */}
                     <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex justify-between items-end gap-2">
                       <div className="flex gap-6">
                         <div>
                           <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tight">Estoque Atual</p>
-                          <p className={`text-xl font-black ${item.estoque_atual <= 0 ? 'text-red-500 line-through' : item.estoque_atual <= 5 ? 'text-amber-500' : 'text-gray-800'}`}>
+                          <p className={`text-xl font-black ${item.estoque_atual <= 0 ? 'text-red-500 font-mono' : item.estoque_atual <= 5 ? 'text-amber-500' : 'text-gray-800'}`}>
                             {item.estoque_atual} <span className="text-[10px] font-bold text-gray-400 uppercase">un</span>
                           </p>
                         </div>
                         <div>
                           <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tight">Mat. Prima</p>
-                          <p className="text-xl font-black text-gray-600">
-                            {item.estoque_mat_prima} <span className="text-[10px] font-bold text-gray-400 uppercase">un</span>
+                          <p className="text-sm font-black text-gray-600 mt-1 truncate max-w-[100px]" title={item.estoque_mat_prima}>
+                            {item.estoque_mat_prima || 'N/A'}
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 text-gray-400 max-w-[110px] truncate shrink-0">
-                        <MapPin size={12} />
-                        <span className="text-[10px] font-bold uppercase truncate">
-                          {item.prateleira_separacao || 'N/A'}
-                        </span>
+                      
+                      <div className="flex items-center gap-1 text-gray-400 text-[10px] font-bold uppercase shrink-0">
+                        <Layers size={11} />
+                        <span>PRODUTO</span>
                       </div>
                     </div>
                   </div>
                 ))
               ) : (
                 <div className="col-span-full py-12 text-center text-gray-400 font-bold text-xs uppercase tracking-wide">
-                  Nenhum produto atende aos filtros e buscas selecionados.
+                  Nenhum produto cadastrado com os critérios selecionados.
                 </div>
               )}
             </div>
 
-            {/* BARRA DE PAGINAÇÃO */}
+            {/* PAGINAÇÃO */}
             <div className="flex justify-between items-center mt-8 pt-4 border-t border-gray-100">
               <button 
                 disabled={paginaAtual === 1}
@@ -369,11 +340,9 @@ export function EstoqueManager() {
               >
                 <ChevronLeft size={16} /> Anterior
               </button>
-              
               <span className="text-xs font-black text-gray-500 uppercase tracking-wider">
                 Página {paginaAtual} de {totalPaginas || 1}
               </span>
-              
               <button 
                 disabled={paginaAtual >= totalPaginas || totalPaginas === 0}
                 onClick={() => setPaginaAtual(p => p + 1)}
@@ -386,17 +355,17 @@ export function EstoqueManager() {
         )}
       </div>
 
-      {/* PAINEL INDUSTRIAL DE EDIÇÃO (MODAL) */}
+      {/* FORMULÁRIO DE EDIÇÃO ATUALIZADO */}
       {itemParaEdicao && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden my-8 animate-in zoom-in-95 duration-150">
+          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden my-8">
             
             <div className="bg-amber-600 p-5 text-white flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <Pencil size={18} />
                 <div>
-                  <h2 className="font-black uppercase tracking-tight text-xs">Painel de Ajuste Comercial</h2>
-                  <p className="text-[10px] text-amber-100 font-bold uppercase">Código do Item: {itemParaEdicao.cod}</p>
+                  <h2 className="font-black uppercase tracking-tight text-xs">Painel de Ajuste de Item</h2>
+                  <p className="text-[10px] text-amber-100 font-bold uppercase">CÓD INTERNO: {itemParaEdicao.cod}</p>
                 </div>
               </div>
               <button onClick={() => setItemParaEdicao(null)} className="p-1.5 hover:bg-amber-700 rounded-xl text-white cursor-pointer transition-colors">
@@ -409,58 +378,49 @@ export function EstoqueManager() {
                 
                 {/* Nome */}
                 <div className="md:col-span-2">
-                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-wider block mb-1">Nome Completo do Produto</label>
+                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-wider block mb-1">Nome do Produto</label>
                   <input type="text" value={editNome} onChange={(e) => setEditNome(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold text-xs text-gray-800 uppercase bg-gray-50 outline-none focus:border-amber-500" />
                 </div>
 
-                {/* Código Interno */}
+                {/* Código Interno (Chave int8) */}
                 <div>
-                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-wider block mb-1">Cód Interno (Chave)</label>
-                  <input type="text" value={editCod} onChange={(e) => setEditCod(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-mono font-bold text-gray-700 bg-gray-50 outline-none focus:border-amber-500" />
+                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-wider block mb-1">Cód Interno (Numérico)</label>
+                  <input type="number" value={editCod} onChange={(e) => setEditCod(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-mono font-bold text-gray-700 bg-gray-50 outline-none focus:border-amber-500" />
                 </div>
 
-                {/* Cód de Barras */}
+                {/* Código de Barras (EAN int8) */}
                 <div>
                   <label className="text-[9px] font-black uppercase text-gray-400 tracking-wider block mb-1">Código de Barras (EAN)</label>
                   <div className="relative">
                     <Barcode className="absolute left-3 top-2.5 text-gray-400" size={14} />
-                    <input type="text" value={editBarcode} onChange={(e) => setEditBarcode(e.target.value)} className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-xs font-mono text-gray-700 bg-gray-50 outline-none focus:border-amber-500" />
+                    <input type="number" value={editBarcode} onChange={(e) => setEditBarcode(e.target.value)} className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-xs font-mono text-gray-700 bg-gray-50 outline-none focus:border-amber-500" />
                   </div>
                 </div>
 
-                {/* Categoria */}
-                <div>
-                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-wider block mb-1">Categoria Comercial</label>
-                  <input type="text" value={editCategoria} onChange={(e) => setEditCategoria(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 bg-gray-50 outline-none focus:border-amber-500 uppercase" />
-                </div>
-
-                {/* Localização Prateleira */}
-                <div>
-                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-wider block mb-1">Prateleira / Local de Separação</label>
+                {/* Localização / Endereçamento */}
+                <div className="md:col-span-2">
+                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-wider block mb-1">Endereçamento Logístico</label>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-2.5 text-gray-400" size={14} />
-                    <input type="text" value={editPrateleira} onChange={(e) => setEditPrateleira(e.target.value)} className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 bg-gray-50 outline-none focus:border-amber-500 uppercase" />
+                    <input type="text" value={editEnderecamento} onChange={(e) => setEditEnderecamento(e.target.value)} className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 bg-gray-50 outline-none focus:border-amber-500 uppercase" />
                   </div>
                 </div>
 
-                {/* BALANCES EM GRUPO */}
+                {/* SALDOS EM GRUPO ADAPTADOS */}
                 <div className="bg-amber-50/50 p-4 rounded-2xl border border-amber-100 md:col-span-2 grid grid-cols-2 gap-4">
-                  <div className="col-span-2">
-                    <h4 className="text-[10px] font-black uppercase tracking-wider text-amber-800">Saldos Físicos de Estoque</h4>
-                  </div>
                   <div>
-                    <label className="text-[9px] font-bold text-gray-500 uppercase block mb-1">Estoque Comercial Atual</label>
+                    <label className="text-[9px] font-bold text-gray-500 uppercase block mb-1">Estoque Físico Atual</label>
                     <input type="number" value={editEstoqueAtual} onChange={(e) => setEditEstoqueAtual(Number(e.target.value))} className="w-full px-3 py-2 border border-gray-200 rounded-xl font-black text-sm bg-white outline-none focus:border-amber-500" />
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold text-gray-500 uppercase block mb-1">Estoque Matéria Prima</label>
-                    <input type="number" value={editEstoqueMatPrima} onChange={(e) => setEditEstoqueMatPrima(Number(e.target.value))} className="w-full px-3 py-2 border border-gray-200 rounded-xl font-black text-sm bg-white outline-none focus:border-amber-500" />
+                    <label className="text-[9px] font-bold text-gray-500 uppercase block mb-1">Estoque Matéria Prima (Texto)</label>
+                    <input type="text" value={editEstoqueMatPrima} onChange={(e) => setEditEstoqueMatPrima(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-xl font-black text-sm bg-white outline-none focus:border-amber-500" />
                   </div>
                 </div>
 
                 {/* Comentários */}
                 <div className="md:col-span-2">
-                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-wider block mb-1">Comentários / Observações Internas</label>
+                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-wider block mb-1">Comentários / Observações</label>
                   <div className="relative">
                     <MessageSquare className="absolute left-3 top-2.5 text-gray-400" size={14} />
                     <textarea rows={2} value={editComentarios} onChange={(e) => setEditComentarios(e.target.value)} className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-xs text-gray-700 bg-gray-50 outline-none focus:border-amber-500" />
@@ -468,7 +428,6 @@ export function EstoqueManager() {
                 </div>
               </div>
 
-              {/* RODAPÉ DO FORMULÁRIO */}
               <div className="flex gap-2 pt-4 border-t border-gray-100 justify-end">
                 <button type="button" onClick={() => setItemParaEdicao(null)} className="px-5 py-2.5 border border-gray-200 text-gray-500 rounded-xl font-bold text-xs uppercase cursor-pointer hover:bg-gray-50 transition-colors">
                   Cancelar
@@ -479,7 +438,7 @@ export function EstoqueManager() {
                   onClick={salvarEdicaoEstoque} 
                   className="px-6 py-2.5 bg-amber-600 text-white rounded-xl font-black text-xs uppercase hover:bg-amber-700 flex items-center gap-1.5 shadow-md transition-all disabled:opacity-50"
                 >
-                  <Save size={14} /> {salvandoEdicao ? "Salvando..." : "Salvar Painel Completo"}
+                  <Save size={14} /> {salvandoEdicao ? "Salvando..." : "Salvar Alterações"}
                 </button>
               </div>
             </div>
@@ -487,43 +446,43 @@ export function EstoqueManager() {
         </div>
       )}
 
-      {/* MODAL SIMPLES DE VISUALIZAÇÃO DE DETALHES */}
+      {/* DETALHES SIMPLES (MODAL CLIQUE) */}
       {itemSelecionado && !itemParaEdicao && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setItemSelecionado(null)}>
-          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="bg-gray-900 p-6 text-white flex justify-between items-center">
-              <h2 className="font-black uppercase tracking-tight text-sm">Ficha Técnica</h2>
+              <h2 className="font-black uppercase tracking-tight text-sm">Ficha do Produto</h2>
               <button onClick={() => setItemSelecionado(null)} className="p-2 hover:bg-gray-800 rounded-xl cursor-pointer transition-colors">
                 <X size={20} />
               </button>
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Nome</p>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Nome do Item</p>
                 <p className="text-base font-black text-gray-800 uppercase leading-tight">{itemSelecionado.nome}</p>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-gray-50 p-2 rounded-xl border border-gray-100">
-                  <p className="text-[9px] font-black text-gray-400 uppercase">Cód. Produto</p>
+                  <p className="text-[9px] font-black text-gray-400 uppercase">Cód. Interno</p>
                   <p className="text-xs font-bold text-gray-700 font-mono">{itemSelecionado.cod}</p>
                 </div>
                 <div className="bg-gray-50 p-2 rounded-xl border border-gray-100">
-                  <p className="text-[9px] font-black text-gray-400 uppercase">Categoria</p>
-                  <p className="text-xs font-bold text-gray-700 uppercase truncate">{itemSelecionado.categoria || 'Geral'}</p>
+                  <p className="text-[9px] font-black text-gray-400 uppercase">EAN / Barras</p>
+                  <p className="text-xs font-bold text-gray-700 font-mono truncate">{itemSelecionado.codigo_de_barras || 'N/A'}</p>
                 </div>
               </div>
-              <div className="bg-blue-50 border border-blue-100 p-3 rounded-xl">
-                <p className="text-[9px] font-black text-blue-600 uppercase">Endereçamento / Prateleira</p>
-                <p className="text-xs font-bold text-blue-900 uppercase">{itemSelecionado.prateleira_separacao || 'Não Alocado'}</p>
+              <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl">
+                <p className="text-[9px] font-black text-emerald-600 uppercase">Endereço de Armazenamento</p>
+                <p className="text-xs font-bold text-emerald-900 uppercase">{itemSelecionado.enderecamento || 'Pátio / Geral'}</p>
               </div>
               {itemSelecionado.comentarios && (
                 <div>
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Observação</p>
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Observações Técnicas</p>
                   <p className="text-xs text-gray-600 bg-gray-50 p-3 rounded-xl border border-gray-100 font-medium italic">"{itemSelecionado.comentarios}"</p>
                 </div>
               )}
               <button onClick={() => setItemSelecionado(null)} className="w-full py-3 bg-gray-900 text-white rounded-xl font-black uppercase text-xs cursor-pointer hover:bg-gray-800 transition-colors">
-                Fechar Visualização
+                Fechar Ficha
               </button>
             </div>
           </div>
